@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\RelationNotFoundException;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Query\Builder as BaseBuilder;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Database\Query\Processors\Processor;
 use Illuminate\Support\Carbon;
@@ -625,7 +626,7 @@ class DatabaseEloquentBuilderTest extends TestCase
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('pluck')->with('name', '')->andReturn(new BaseCollection(['bar', 'baz']));
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('hasGetMutator')->with('name')->andReturn(true);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('name')->andReturn(true);
         $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'bar'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'bar']));
         $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'baz'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'baz']));
 
@@ -637,7 +638,7 @@ class DatabaseEloquentBuilderTest extends TestCase
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('pluck')->with('name', '')->andReturn(new BaseCollection(['bar', 'baz']));
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('hasGetMutator')->with('name')->andReturn(false);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('name')->andReturn(false);
         $builder->getModel()->shouldReceive('hasCast')->with('name')->andReturn(true);
         $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'bar'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'bar']));
         $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'baz'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'baz']));
@@ -650,7 +651,7 @@ class DatabaseEloquentBuilderTest extends TestCase
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('pluck')->with('created_at', '')->andReturn(new BaseCollection(['2010-01-01 00:00:00', '2011-01-01 00:00:00']));
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('hasGetMutator')->with('created_at')->andReturn(false);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('created_at')->andReturn(false);
         $builder->getModel()->shouldReceive('hasCast')->with('created_at')->andReturn(false);
         $builder->getModel()->shouldReceive('getDates')->andReturn(['created_at']);
         $builder->getModel()->shouldReceive('newFromBuilder')->with(['created_at' => '2010-01-01 00:00:00'])->andReturn(new EloquentBuilderTestPluckDatesStub(['created_at' => '2010-01-01 00:00:00']));
@@ -659,12 +660,60 @@ class DatabaseEloquentBuilderTest extends TestCase
         $this->assertEquals(['date_2010-01-01 00:00:00', 'date_2011-01-01 00:00:00'], $builder->pluck('created_at')->all());
     }
 
+    public function testQualifiedPluckReturnsTheMutatedAttributesOfAModel()
+    {
+        $model = $this->getMockModel();
+        $model->shouldReceive('qualifyColumn')->with('name')->andReturn('foo_table.name');
+
+        $builder = $this->getBuilder();
+        $builder->getQuery()->shouldReceive('pluck')->with($model->qualifyColumn('name'), '')->andReturn(new BaseCollection(['bar', 'baz']));
+        $builder->setModel($model);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('name')->andReturn(true);
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'bar'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'bar']));
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'baz'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'baz']));
+
+        $this->assertEquals(['foo_bar', 'foo_baz'], $builder->pluck($model->qualifyColumn('name'))->all());
+    }
+
+    public function testQualifiedPluckReturnsTheCastedAttributesOfAModel()
+    {
+        $model = $this->getMockModel();
+        $model->shouldReceive('qualifyColumn')->with('name')->andReturn('foo_table.name');
+
+        $builder = $this->getBuilder();
+        $builder->getQuery()->shouldReceive('pluck')->with($model->qualifyColumn('name'), '')->andReturn(new BaseCollection(['bar', 'baz']));
+        $builder->setModel($model);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('name')->andReturn(false);
+        $builder->getModel()->shouldReceive('hasCast')->with('name')->andReturn(true);
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'bar'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'bar']));
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['name' => 'baz'])->andReturn(new EloquentBuilderTestPluckStub(['name' => 'baz']));
+
+        $this->assertEquals(['foo_bar', 'foo_baz'], $builder->pluck($model->qualifyColumn('name'))->all());
+    }
+
+    public function testQualifiedPluckReturnsTheDateAttributesOfAModel()
+    {
+        $model = $this->getMockModel();
+        $model->shouldReceive('qualifyColumn')->with('created_at')->andReturn('foo_table.created_at');
+
+        $builder = $this->getBuilder();
+        $builder->getQuery()->shouldReceive('pluck')->with($model->qualifyColumn('created_at'), '')->andReturn(new BaseCollection(['2010-01-01 00:00:00', '2011-01-01 00:00:00']));
+        $builder->setModel($model);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('created_at')->andReturn(false);
+        $builder->getModel()->shouldReceive('hasCast')->with('created_at')->andReturn(false);
+        $builder->getModel()->shouldReceive('getDates')->andReturn(['created_at']);
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['created_at' => '2010-01-01 00:00:00'])->andReturn(new EloquentBuilderTestPluckDatesStub(['created_at' => '2010-01-01 00:00:00']));
+        $builder->getModel()->shouldReceive('newFromBuilder')->with(['created_at' => '2011-01-01 00:00:00'])->andReturn(new EloquentBuilderTestPluckDatesStub(['created_at' => '2011-01-01 00:00:00']));
+
+        $this->assertEquals(['date_2010-01-01 00:00:00', 'date_2011-01-01 00:00:00'], $builder->pluck($model->qualifyColumn('created_at'))->all());
+    }
+
     public function testPluckWithoutModelGetterJustReturnsTheAttributesFoundInDatabase()
     {
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('pluck')->with('name', '')->andReturn(new BaseCollection(['bar', 'baz']));
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('hasGetMutator')->with('name')->andReturn(false);
+        $builder->getModel()->shouldReceive('hasAnyGetMutator')->with('name')->andReturn(false);
         $builder->getModel()->shouldReceive('hasCast')->with('name')->andReturn(false);
         $builder->getModel()->shouldReceive('getDates')->andReturn(['created_at']);
 
@@ -917,6 +966,11 @@ class DatabaseEloquentBuilderTest extends TestCase
         $builder->getQuery()->shouldReceive('insertOrIgnore')->once()->with(['bar'])->andReturn('foo');
 
         $this->assertSame('foo', $builder->insertOrIgnore(['bar']));
+
+        $builder = $this->getBuilder();
+        $builder->getQuery()->shouldReceive('insertOrIgnoreUsing')->once()->with(['bar'], 'baz')->andReturn('foo');
+
+        $this->assertSame('foo', $builder->insertOrIgnoreUsing(['bar'], 'baz'));
 
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('insertGetId')->once()->with(['bar'])->andReturn('foo');
@@ -1273,6 +1327,15 @@ class DatabaseEloquentBuilderTest extends TestCase
         $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select min("eloquent_builder_test_model_close_related_stubs"."price") from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_min_price" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
     }
 
+    public function testWithMinExpression()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+
+        $builder = $model->withMin('foo', new Expression('price - discount'));
+
+        $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select min(price - discount) from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_min_price_discount" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
+    }
+
     public function testWithMinOnBelongsToMany()
     {
         $model = new EloquentBuilderTestModelParentStub;
@@ -1295,6 +1358,42 @@ class DatabaseEloquentBuilderTest extends TestCase
         $sql = preg_replace($aliasRegex, $alias, $sql);
 
         $this->assertSame('select "self_related_stubs".*, (select min("self_alias_hash"."created_at") from "self_related_stubs" as "self_alias_hash" where "self_related_stubs"."id" = "self_alias_hash"."parent_id") as "child_foos_min_created_at" from "self_related_stubs"', $sql);
+    }
+
+    public function testWithMax()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+
+        $builder = $model->withMax('foo', 'price');
+
+        $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select max("eloquent_builder_test_model_close_related_stubs"."price") from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_max_price" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
+    }
+
+    public function testWithMaxExpression()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+
+        $builder = $model->withMax('foo', new Expression('price - discount'));
+
+        $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select max(price - discount) from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_max_price_discount" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
+    }
+
+    public function testWithAvg()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+
+        $builder = $model->withAvg('foo', 'price');
+
+        $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select avg("eloquent_builder_test_model_close_related_stubs"."price") from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_avg_price" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
+    }
+
+    public function testWitAvgExpression()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+
+        $builder = $model->withAvg('foo', new Expression('price - discount'));
+
+        $this->assertSame('select "eloquent_builder_test_model_parent_stubs".*, (select avg(price - discount) from "eloquent_builder_test_model_close_related_stubs" where "eloquent_builder_test_model_parent_stubs"."foo_id" = "eloquent_builder_test_model_close_related_stubs"."id") as "foo_avg_price_discount" from "eloquent_builder_test_model_parent_stubs"', $builder->toSql());
     }
 
     public function testWithCountAndConstraintsAndHaving()
@@ -1675,8 +1774,45 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->whereMorphedTo('morph', $relatedModel);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where ("morph_type" = ? and "morph_id" = ?)', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?)))', $builder->toSql());
         $this->assertEquals([$relatedModel->getMorphClass(), $relatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testWhereMorphedToCollection()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $builder = $model->whereMorphedTo('morph', new Collection([$firstRelatedModel, $secondRelatedModel]));
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?, ?)))', $builder->toSql());
+        $this->assertEquals([$firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $secondRelatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testWhereMorphedToCollectionWithDifferentModels()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelFarRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $thirdRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $thirdRelatedModel->id = 3;
+
+        $builder = $model->whereMorphedTo('morph', [$firstRelatedModel, $secondRelatedModel, $thirdRelatedModel]);
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?, ?)) or ("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?)))', $builder->toSql());
+        $this->assertEquals([$firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $thirdRelatedModel->getKey(), $secondRelatedModel->getMorphClass(), $secondRelatedModel->id], $builder->getBindings());
     }
 
     public function testWhereMorphedToNull()
@@ -1685,7 +1821,7 @@ class DatabaseEloquentBuilderTest extends TestCase
         $this->mockConnectionForModel($model, '');
 
         $builder = $model->whereMorphedTo('morph', null);
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "morph_type" is null', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "eloquent_builder_test_model_parent_stubs"."morph_type" is null', $builder->toSql());
     }
 
     public function testWhereNotMorphedTo()
@@ -1698,8 +1834,45 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->whereNotMorphedTo('morph', $relatedModel);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not ("morph_type" <=> ? and "morph_id" <=> ?)', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?)))', $builder->toSql());
         $this->assertEquals([$relatedModel->getMorphClass(), $relatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testWhereNotMorphedToCollection()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $builder = $model->whereNotMorphedTo('morph', new Collection([$firstRelatedModel, $secondRelatedModel]));
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?, ?)))', $builder->toSql());
+        $this->assertEquals([$firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $secondRelatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testWhereNotMorphedToCollectionWithDifferentModels()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelFarRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $thirdRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $thirdRelatedModel->id = 3;
+
+        $builder = $model->whereNotMorphedTo('morph', [$firstRelatedModel, $secondRelatedModel, $thirdRelatedModel]);
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?, ?)) or ("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?)))', $builder->toSql());
+        $this->assertEquals([$firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $thirdRelatedModel->getKey(), $secondRelatedModel->getMorphClass(), $secondRelatedModel->id], $builder->getBindings());
     }
 
     public function testOrWhereMorphedTo()
@@ -1712,8 +1885,45 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->where('bar', 'baz')->orWhereMorphedTo('morph', $relatedModel);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or ("morph_type" = ? and "morph_id" = ?)', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?)))', $builder->toSql());
         $this->assertEquals(['baz', $relatedModel->getMorphClass(), $relatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testOrWhereMorphedToCollection()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $builder = $model->where('bar', 'baz')->orWhereMorphedTo('morph', new Collection([$firstRelatedModel, $secondRelatedModel]));
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?, ?)))', $builder->toSql());
+        $this->assertEquals(['baz', $firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $secondRelatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testOrWhereMorphedToCollectionWithDifferentModels()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelFarRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $thirdRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $thirdRelatedModel->id = 3;
+
+        $builder = $model->where('bar', 'baz')->orWhereMorphedTo('morph', [$firstRelatedModel, $secondRelatedModel, $thirdRelatedModel]);
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or (("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?, ?)) or ("eloquent_builder_test_model_parent_stubs"."morph_type" = ? and "eloquent_builder_test_model_parent_stubs"."morph_id" in (?)))', $builder->toSql());
+        $this->assertEquals(['baz', $firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $thirdRelatedModel->getKey(), $secondRelatedModel->getMorphClass(), $secondRelatedModel->id], $builder->getBindings());
     }
 
     public function testOrWhereMorphedToNull()
@@ -1723,7 +1933,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->where('bar', 'baz')->orWhereMorphedTo('morph', null);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or "morph_type" is null', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or "eloquent_builder_test_model_parent_stubs"."morph_type" is null', $builder->toSql());
         $this->assertEquals(['baz'], $builder->getBindings());
     }
 
@@ -1737,8 +1947,45 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->where('bar', 'baz')->orWhereNotMorphedTo('morph', $relatedModel);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not ("morph_type" <=> ? and "morph_id" <=> ?)', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?)))', $builder->toSql());
         $this->assertEquals(['baz', $relatedModel->getMorphClass(), $relatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testOrWhereNotMorphedToCollection()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $builder = $model->where('bar', 'baz')->orWhereNotMorphedTo('morph', new Collection([$firstRelatedModel, $secondRelatedModel]));
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?, ?)))', $builder->toSql());
+        $this->assertEquals(['baz', $firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $secondRelatedModel->getKey()], $builder->getBindings());
+    }
+
+    public function testOrWhereNotMorphedToCollectionWithDifferentModels()
+    {
+        $model = new EloquentBuilderTestModelParentStub;
+        $this->mockConnectionForModel($model, '');
+
+        $firstRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $firstRelatedModel->id = 1;
+
+        $secondRelatedModel = new EloquentBuilderTestModelFarRelatedStub;
+        $secondRelatedModel->id = 2;
+
+        $thirdRelatedModel = new EloquentBuilderTestModelCloseRelatedStub;
+        $thirdRelatedModel->id = 3;
+
+        $builder = $model->where('bar', 'baz')->orWhereNotMorphedTo('morph', [$firstRelatedModel, $secondRelatedModel, $thirdRelatedModel]);
+
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not (("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?, ?)) or ("eloquent_builder_test_model_parent_stubs"."morph_type" <=> ? and "eloquent_builder_test_model_parent_stubs"."morph_id" not in (?)))', $builder->toSql());
+        $this->assertEquals(['baz', $firstRelatedModel->getMorphClass(), $firstRelatedModel->getKey(), $thirdRelatedModel->getKey(), $secondRelatedModel->getMorphClass(), $secondRelatedModel->id], $builder->getBindings());
     }
 
     public function testWhereMorphedToClass()
@@ -1748,7 +1995,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->whereMorphedTo('morph', EloquentBuilderTestModelCloseRelatedStub::class);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "morph_type" = ?', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "eloquent_builder_test_model_parent_stubs"."morph_type" = ?', $builder->toSql());
         $this->assertEquals([EloquentBuilderTestModelCloseRelatedStub::class], $builder->getBindings());
     }
 
@@ -1759,7 +2006,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->whereNotMorphedTo('morph', EloquentBuilderTestModelCloseRelatedStub::class);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not "morph_type" <=> ?', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where not "eloquent_builder_test_model_parent_stubs"."morph_type" <=> ?', $builder->toSql());
         $this->assertEquals([EloquentBuilderTestModelCloseRelatedStub::class], $builder->getBindings());
     }
 
@@ -1770,7 +2017,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->where('bar', 'baz')->orWhereMorphedTo('morph', EloquentBuilderTestModelCloseRelatedStub::class);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or "morph_type" = ?', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or "eloquent_builder_test_model_parent_stubs"."morph_type" = ?', $builder->toSql());
         $this->assertEquals(['baz', EloquentBuilderTestModelCloseRelatedStub::class], $builder->getBindings());
     }
 
@@ -1781,7 +2028,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->where('bar', 'baz')->orWhereNotMorphedTo('morph', EloquentBuilderTestModelCloseRelatedStub::class);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not "morph_type" <=> ?', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "bar" = ? or not "eloquent_builder_test_model_parent_stubs"."morph_type" <=> ?', $builder->toSql());
         $this->assertEquals(['baz', EloquentBuilderTestModelCloseRelatedStub::class], $builder->getBindings());
     }
 
@@ -1796,7 +2043,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $builder = $model->whereMorphedTo('morph', EloquentBuilderTestModelCloseRelatedStub::class);
 
-        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "morph_type" = ?', $builder->toSql());
+        $this->assertSame('select * from "eloquent_builder_test_model_parent_stubs" where "eloquent_builder_test_model_parent_stubs"."morph_type" = ?', $builder->toSql());
         $this->assertEquals(['alias'], $builder->getBindings());
 
         Relation::morphMap([], false);
@@ -2244,6 +2491,48 @@ class DatabaseEloquentBuilderTest extends TestCase
         $builder = new Builder($query);
 
         $this->assertSame('select * from "users" where "email" = \'foo\'', $builder->toRawSql());
+    }
+
+    public function testPassthruMethodsCallsAreNotCaseSensitive()
+    {
+        $query = m::mock(BaseBuilder::class);
+
+        $mockResponse = 'select 1';
+        $query
+            ->shouldReceive('toRawSql')
+            ->andReturn($mockResponse)
+            ->times(3);
+
+        $builder = new Builder($query);
+
+        $this->assertSame('select 1', $builder->TORAWSQL());
+        $this->assertSame('select 1', $builder->toRawSql());
+        $this->assertSame('select 1', $builder->toRawSQL());
+    }
+
+    public function testPassthruArrayElementsMustAllBeLowercase()
+    {
+        $builder = new class(m::mock(BaseBuilder::class)) extends Builder
+        {
+            // expose protected member for test
+            public function getPassthru(): array
+            {
+                return $this->passthru;
+            }
+        };
+
+        $passthru = $builder->getPassthru();
+
+        foreach ($passthru as $method) {
+            $lowercaseMethod = strtolower($method);
+
+            $this->assertSame(
+                $lowercaseMethod,
+                $method,
+                'Eloquent\\Builder relies on lowercase method names in $passthru array to correctly mimic PHP case-insensitivity on method dispatch.'.
+                    'If you are adding a new method to the $passthru array, make sure the name is lowercased.'
+            );
+        }
     }
 
     protected function mockConnectionForModel($model, $database)

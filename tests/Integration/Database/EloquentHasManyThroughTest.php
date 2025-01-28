@@ -3,6 +3,7 @@
 namespace Illuminate\Tests\Integration\Database\EloquentHasManyThroughTest;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +13,7 @@ use Illuminate\Tests\Integration\Database\DatabaseTestCase;
 
 class EloquentHasManyThroughTest extends DatabaseTestCase
 {
-    protected function defineDatabaseMigrationsAfterDatabaseRefreshed()
+    protected function afterRefreshingDatabase()
     {
         Schema::create('users', function (Blueprint $table) {
             $table->increments('id');
@@ -366,6 +367,33 @@ class EloquentHasManyThroughTest extends DatabaseTestCase
         // $jane should not be updated, because it belongs to a different user altogether.
         $this->assertSame('jane-slug', $jane->fresh()->slug);
     }
+
+    public function testCanReplicateModelLoadedThroughHasManyThrough()
+    {
+        $team = Team::create();
+        $user = User::create(['team_id' => $team->id, 'name' => 'John']);
+        Article::create(['user_id' => $user->id, 'title' => 'John\'s new has-many-through-article']);
+
+        $article = $team->articles()->first();
+
+        $this->assertInstanceOf(Article::class, $article);
+
+        $newArticle = $article->replicate();
+        $newArticle->title .= ' v2';
+        $newArticle->save();
+    }
+
+    public function testOne(): void
+    {
+        $team = Team::create();
+
+        $user = User::create(['team_id' => $team->id, 'name' => Str::random()]);
+
+        Article::create(['user_id' => $user->id, 'title' => Str::random(), 'created_at' => now()->subDay()]);
+        $latestArticle = Article::create(['user_id' => $user->id, 'title' => Str::random(), 'created_at' => now()]);
+
+        $this->assertEquals($latestArticle->id, $team->latestArticle->id);
+    }
 }
 
 class User extends Model
@@ -458,6 +486,11 @@ class Team extends Model
     public function articles()
     {
         return $this->hasManyThrough(Article::class, User::class);
+    }
+
+    public function latestArticle(): HasOneThrough
+    {
+        return $this->articles()->one()->latest();
     }
 }
 

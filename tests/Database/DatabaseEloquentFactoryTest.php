@@ -129,14 +129,30 @@ class DatabaseEloquentFactoryTest extends TestCase
         $users = FactoryTestUserFactory::new()->createMany(2);
         $this->assertInstanceOf(Collection::class, $users);
         $this->assertCount(2, $users);
+        $this->assertInstanceOf(FactoryTestUser::class, $users->first());
 
         $users = FactoryTestUserFactory::times(2)->createMany();
         $this->assertInstanceOf(Collection::class, $users);
         $this->assertCount(2, $users);
+        $this->assertInstanceOf(FactoryTestUser::class, $users->first());
+
+        $users = FactoryTestUserFactory::times(2)->createMany();
+        $this->assertInstanceOf(Collection::class, $users);
+        $this->assertCount(2, $users);
+        $this->assertInstanceOf(FactoryTestUser::class, $users->first());
+
+        $users = FactoryTestUserFactory::times(3)->createMany([
+            ['name' => 'Taylor Otwell'],
+            ['name' => 'Jeffrey Way'],
+        ]);
+        $this->assertInstanceOf(Collection::class, $users);
+        $this->assertCount(2, $users);
+        $this->assertInstanceOf(FactoryTestUser::class, $users->first());
 
         $users = FactoryTestUserFactory::new()->createMany();
         $this->assertInstanceOf(Collection::class, $users);
         $this->assertCount(1, $users);
+        $this->assertInstanceOf(FactoryTestUser::class, $users->first());
 
         $users = FactoryTestUserFactory::times(10)->create();
         $this->assertCount(10, $users);
@@ -217,7 +233,7 @@ class DatabaseEloquentFactoryTest extends TestCase
 
     public function test_multiple_model_attributes_can_be_created()
     {
-        $posts = FactoryTestPostFactory::new()->times(10)->raw();
+        $posts = FactoryTestPostFactory::times(10)->raw();
         $this->assertIsArray($posts);
 
         $this->assertCount(10, $posts);
@@ -802,6 +818,15 @@ class DatabaseEloquentFactoryTest extends TestCase
 
         $this->assertSame(2, FactoryTestPost::count());
         $this->assertSame(2, FactoryTestUser::count());
+    }
+
+    public function test_can_disable_relationships()
+    {
+        $post = FactoryTestPostFactory::new()
+            ->withoutParents()
+            ->make();
+
+        $this->assertNull($post->user_id);
     }
 
     /**
