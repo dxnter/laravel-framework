@@ -49,4 +49,28 @@ class ThrottleRequestsWithRedisTest extends TestCase
             }
         });
     }
+
+    public function testThrottleRequestsWithRedisUsesCachePrefixAutomatically()
+    {
+        $this->ifRedisAvailable(function () {
+            $redis = $this->redis['phpredis']->connection();
+            $redis->flushdb();
+
+            $this->app['config']->set('cache.prefix', 'laravel:');
+
+            Route::get('/prefixed', fn () => 'ok')
+                ->middleware(ThrottleRequestsWithRedis::class.':2,1');
+
+            $response = $this->withoutExceptionHandling()->get('/prefixed');
+
+            $this->assertSame('ok', $response->getContent());
+
+            $keys = $redis->keys('*');
+
+            $this->assertNotEmpty($keys);
+            $this->assertTrue(collect($keys)->every(fn ($key) => str_contains($key, 'laravel:')));
+
+            $redis->flushdb();
+        });
+    }
 }
